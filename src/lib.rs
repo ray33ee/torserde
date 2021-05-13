@@ -22,7 +22,7 @@ pub trait TorSerde {
     fn bin_serialise_into<W: Write>(&self, stream: W);
 
     //The payload_length argument is literally only needed for the Versions cell since its length is not a part  of the payload
-    fn bin_deserialise_from<R: Read>(stream: R, payload_length: Option<u32>) -> Self;
+    fn bin_deserialise_from<R: Read>(stream: R) -> Self;
 
     //Return the length of the data when serialised, in bytes. Used when the length of the payload is required
     fn serialised_length(&self) -> u32;
@@ -33,7 +33,7 @@ pub trait TorSerde {
 pub struct VersionsVector(Vec<u16>);
 
 //A thin wrapper around Vec that allows us to specify the number of bytes to serialise the length of the vector into (N)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NLengthVector<T: TorSerde, const N: usize>(Vec<T>);
 
 impl From<Vec<u16>> for VersionsVector {
@@ -65,7 +65,7 @@ impl TorSerde for u8 {
         BINCODE_OPTIONS.serialize_into(stream, &self).unwrap();
     }
 
-    fn bin_deserialise_from<R: Read>(stream: R, _payload_length: Option<u32>) -> Self {
+    fn bin_deserialise_from<R: Read>(stream: R) -> Self {
         BINCODE_OPTIONS.deserialize_from(stream).unwrap()
     }
 
@@ -77,7 +77,7 @@ impl TorSerde for u16 {
         BINCODE_OPTIONS.serialize_into(stream, &self).unwrap();
     }
 
-    fn bin_deserialise_from<R: Read>(stream: R, _payload_length: Option<u32>) -> Self {
+    fn bin_deserialise_from<R: Read>(stream: R) -> Self {
         BINCODE_OPTIONS.deserialize_from(stream).unwrap()
     }
 
@@ -89,7 +89,7 @@ impl TorSerde for u32 {
         BINCODE_OPTIONS.serialize_into(stream, &self).unwrap();
     }
 
-    fn bin_deserialise_from<R: Read>(stream: R, _payload_length: Option<u32>) -> Self {
+    fn bin_deserialise_from<R: Read>(stream: R) -> Self {
         BINCODE_OPTIONS.deserialize_from(stream).unwrap()
     }
 
@@ -101,7 +101,7 @@ impl TorSerde for u128 {
         BINCODE_OPTIONS.serialize_into(stream, &self).unwrap();
     }
 
-    fn bin_deserialise_from<R: Read>(stream: R, _payload_length: Option<u32>) -> Self {
+    fn bin_deserialise_from<R: Read>(stream: R) -> Self {
         BINCODE_OPTIONS.deserialize_from(stream).unwrap()
     }
 
@@ -122,18 +122,18 @@ impl<T: TorSerde, const N: usize> TorSerde for NLengthVector<T, N> {
         }
     }
 
-    fn bin_deserialise_from<R: Read>(mut stream: R, _payload_length: Option<u32>) -> Self {
+    fn bin_deserialise_from<R: Read>(mut stream: R) -> Self {
         let length = match N {
-            1 => u8::bin_deserialise_from(stream.borrow_mut(), None) as u32,
-            2 => u16::bin_deserialise_from(stream.borrow_mut(), None) as u32,
-            4 => u32::bin_deserialise_from(stream.borrow_mut(), None),
+            1 => u8::bin_deserialise_from(stream.borrow_mut()) as u32,
+            2 => u16::bin_deserialise_from(stream.borrow_mut()) as u32,
+            4 => u32::bin_deserialise_from(stream.borrow_mut()),
             _ => unreachable!()
         };
 
         let mut list = Vec::with_capacity(length as usize);
 
         for _ in 0..length {
-            list.push(T::bin_deserialise_from(stream.borrow_mut(), None));
+            list.push(T::bin_deserialise_from(stream.borrow_mut()));
         }
 
         Self(list)
@@ -152,16 +152,19 @@ impl<T: TorSerde, const N: usize> TorSerde for NLengthVector<T, N> {
 
 impl TorSerde for VersionsVector {
     fn bin_serialise_into<W: Write>(&self, mut stream: W) {
+        ((self.0.len()*2) as u16).bin_serialise_into(stream.borrow_mut());
+
         for item in self.0.iter() {
             item.bin_serialise_into(stream.borrow_mut())
         }
     }
 
-    fn bin_deserialise_from<R: Read>(mut stream: R, payload_length: Option<u32>) -> Self {
-        let mut list = Vec::with_capacity(payload_length.unwrap() as usize);
+    fn bin_deserialise_from<R: Read>(mut stream: R) -> Self {
+        let mut length = u16::bin_deserialise_from(stream.borrow_mut()) / 2;
+        let mut list = Vec::with_capacity(length as usize);
 
-        for _ in 0..payload_length.unwrap() {
-            list.push(u16::bin_deserialise_from(stream.borrow_mut(), None));
+        for _ in 0..length {
+            list.push(u16::bin_deserialise_from(stream.borrow_mut()));
         }
 
         Self(list)
@@ -177,8 +180,8 @@ impl TorSerde for DateTime<Local> {
         (self.timestamp() as u32).bin_serialise_into(stream)
     }
 
-    fn bin_deserialise_from<R: Read>(stream: R, _payload_length: Option<u32>) -> Self {
-        let timestamp = u32::bin_deserialise_from(stream, None);
+    fn bin_deserialise_from<R: Read>(stream: R) -> Self {
+        let timestamp = u32::bin_deserialise_from(stream);
 
         Local.timestamp(timestamp as i64, 0)
     }
@@ -195,8 +198,8 @@ impl TorSerde for Ipv4Addr {
         bytes.bin_serialise_into(stream)
     }
 
-    fn bin_deserialise_from<R: Read>(stream: R, _payload_length: Option<u32>) -> Self {
-        let bytes = u32::bin_deserialise_from(stream, None);
+    fn bin_deserialise_from<R: Read>(stream: R) -> Self {
+        let bytes = u32::bin_deserialise_from(stream);
 
         Self::from(bytes)
     }
@@ -213,8 +216,8 @@ impl TorSerde for Ipv6Addr {
         bytes.bin_serialise_into(stream)
     }
 
-    fn bin_deserialise_from<R: Read>(stream: R, _payload_length: Option<u32>) -> Self {
-        let bytes = u128::bin_deserialise_from(stream, None);
+    fn bin_deserialise_from<R: Read>(stream: R) -> Self {
+        let bytes = u128::bin_deserialise_from(stream);
 
         Self::from(bytes)
     }
@@ -240,14 +243,14 @@ impl TorSerde for IpAddr {
         }
     }
 
-    fn bin_deserialise_from<R: Read>(mut stream: R, _payload_length: Option<u32>) -> Self {
-        let atype = u8::bin_deserialise_from(stream.borrow_mut(), None);
+    fn bin_deserialise_from<R: Read>(mut stream: R) -> Self {
+        let atype = u8::bin_deserialise_from(stream.borrow_mut());
 
-        let _alen = u8::bin_deserialise_from(stream.borrow_mut(), None);
+        let _alen = u8::bin_deserialise_from(stream.borrow_mut());
 
         match atype {
-            4 => { Self::V4(Ipv4Addr::bin_deserialise_from(stream.borrow_mut(), None)) }
-            6 => { Self::V6(Ipv6Addr::bin_deserialise_from(stream.borrow_mut(), None)) }
+            4 => { Self::V4(Ipv4Addr::bin_deserialise_from(stream.borrow_mut())) }
+            6 => { Self::V6(Ipv6Addr::bin_deserialise_from(stream.borrow_mut())) }
             _ => unreachable!()
         }
     }
@@ -269,11 +272,11 @@ impl TorSerde for String {
         0u8.bin_serialise_into(stream.borrow_mut())
     }
 
-    fn bin_deserialise_from<R: Read>(mut stream: R, _payload_length: Option<u32>) -> Self {
+    fn bin_deserialise_from<R: Read>(mut stream: R) -> Self {
         let mut string = Vec::new();
 
         loop {
-            let byte = u8::bin_deserialise_from(stream.borrow_mut(), None);
+            let byte = u8::bin_deserialise_from(stream.borrow_mut());
 
             if byte == 0 {
                 break;
@@ -299,23 +302,17 @@ impl<const N: usize> TorSerde for [u8; N] {
         }
     }
 
-    fn bin_deserialise_from<R: Read>(mut stream: R, _payload_length: Option<u32>) -> Self {
+    fn bin_deserialise_from<R: Read>(mut stream: R) -> Self {
         let mut array = [0u8; N];
 
         for item in array.iter_mut() {
-            *item = u8::bin_deserialise_from(stream.borrow_mut(), None);
+            *item = u8::bin_deserialise_from(stream.borrow_mut());
         }
 
         array
     }
 
     fn serialised_length(&self) -> u32 {
-        let mut total = N as u32;
-
-        for item in self.iter() {
-            total += item.serialised_length();
-        }
-
-        total
+        N as u32
     }
 }

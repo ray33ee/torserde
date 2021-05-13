@@ -1,6 +1,6 @@
 [package]
 name = "torserde"
-version = "0.0.0"
+version = "0.0.1"
 authors = ["ray33ee <30669752+ray33ee@users.noreply.github.com>"]
 description = "A set of tools to allow the serialisation and deserialisation of certain types in accordance with the Tor specification"
 edition = "2018"
