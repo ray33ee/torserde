@@ -11,7 +11,7 @@ use std::borrow::{BorrowMut};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use chrono::{DateTime, Local, TimeZone};
 
-type Result<T> = std::result::Result<T, ErrorKind>;
+pub type Result<T> = std::result::Result<T, ErrorKind>;
 
 #[derive(Debug)]
 pub enum ErrorKind {
@@ -24,7 +24,7 @@ pub enum ErrorKind {
     /// A Read/Write/Seek call failed (write_all is used in the for Strings)
     StdIoError(std::io::ErrorKind),
 
-    /// A predicted digest does not match the actual. Predicted and actual digests plus the number of bytes left to read
+    /// A predicted digest does not match the actual. Predicted and actual digests
     BadDigest(u32, u32),
 }
 
@@ -63,8 +63,6 @@ pub struct VersionsVector(pub Vec<u16>);
 ///A thin wrapper around Vec that allows us to specify the number of bytes to serialise the length of the vector into (N)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NLengthVector<T: TorSerde, const N: usize>(pub Vec<T>);
-
-///A thin wrapper around the 4-byte digest object used in relay cells?
 
 impl From<Vec<u16>> for VersionsVector {
     fn from(v: Vec<u16>) -> Self {
