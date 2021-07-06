@@ -15,17 +15,26 @@ pub type Result<T> = std::result::Result<T, ErrorKind>;
 
 #[derive(Debug)]
 pub enum ErrorKind {
-    /// An unrecognised command with the value of the command and the bytes left still to read
-    InvalidCommand(u8, u64),
+    /// An bad discriminant was found when trying to deserialise an enum. Value of the discriminant
+    BadDiscriminant(u128),
+
+    ///Raised when a cell has been discarded (due to bad discriminant). Value of the bad discriminant
+    DiscardedCell(u128),
+
+    /// A predicted digest does not match the actual. Predicted and actual digests
+    BadDigest(u32, u32),
+
+    /// A serialised relay cell is not the required 509 bytes. Contains the length of the serialised entire relay call, command, recognised, stream_id, digest, data, padding
+    InvalidRelayLength(u32, u32, u32, u32, u32, u32, u32),
+
+    /// There are fewer bytes of padding than there should be to make up the 509 bytes. Number of bytes expected, number of bytes read
+    NotEnoughPadding(usize, usize),
 
     /// A call to a bincode function failed
     BincodeError(bincode::ErrorKind),
 
     /// A Read/Write/Seek call failed (write_all is used in the for Strings)
     StdIoError(std::io::ErrorKind),
-
-    /// A predicted digest does not match the actual. Predicted and actual digests
-    BadDigest(u32, u32),
 }
 
 impl From<Box<bincode::ErrorKind>> for ErrorKind {
@@ -40,8 +49,8 @@ impl From<std::io::Error> for ErrorKind {
     }
 }
 
-/// Represents options for the bincode functions that serialise data into a format compatible with the Tor specification
 lazy_static! {
+    /// Represents options for the bincode functions that serialise data into a format compatible with the Tor specification
     static ref BINCODE_OPTIONS: WithOtherEndian<WithOtherIntEncoding<DefaultOptions, FixintEncoding>, BigEndian> = bincode::config::DefaultOptions::new().with_fixint_encoding().with_big_endian();
 }
 
@@ -134,6 +143,22 @@ impl TorSerde for u32 {
 
     fn serialised_length(&self) -> u32 {
         4
+    }
+}
+
+impl TorSerde for u64 {
+    fn bin_serialise_into<W: Write>(&self, stream: W) -> Result<u32> {
+        BINCODE_OPTIONS.serialize_into(stream, &self)?;
+        Ok(self.serialised_length())
+    }
+
+    fn bin_deserialise_from<R: Read>(stream: R) -> Result<Self> {
+        let res: Self = BINCODE_OPTIONS.deserialize_from(stream)?;
+        Ok(res)
+    }
+
+    fn serialised_length(&self) -> u32 {
+        8
     }
 }
 
@@ -314,7 +339,7 @@ impl TorSerde for String {
         stream.borrow_mut().write_all(self.as_bytes())?;
 
         //Append the stream with the null terminator
-        0u8.bin_serialise_into(stream.borrow_mut());
+        0u8.bin_serialise_into(stream.borrow_mut())?;
 
         Ok(self.serialised_length())
     }
